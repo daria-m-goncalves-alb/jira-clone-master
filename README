@@ -1,0 +1,51 @@
+Jira Issue Cloner
+
+This script automates cloning a Jira issue into one or more target projects, preserving fields like summary, description, issue type, assignee, and versions. It is designed for organizations using Atlassian Jira Cloud.
+
+🔑 Requirements
+Node.js 18+
+A Jira API token from your Atlassian account
+Permissions to create issues in the target projects
+
+📋 Setup
+Generate your API token
+Go to Atlassian API Tokens (https://id.atlassian.com/manage-profile/security/api-tokens) and create a new token.
+Copy and save it securely.
+
+Create a .env file in your project root:
+
+JIRA_BASE=https://yourdomain.atlassian.net
+JIRA_USER=your-email@company.com
+JIRA_TOKEN=your_api_token
+
+JIRA_BASE → Your Jira site URL
+JIRA_USER → Your Atlassian login email
+JIRA_TOKEN → Token from step 1
+
+Define target projects and versions:
+
+File targets.js lists where issues should be cloned.:
+
+[
+  { "project": "X", "fixVersions": ["0.0.1"] },
+  { "project": "X", "fixVersions": ["0.0.2"] }
+]
+
+Adjusts accordingly. You can add as many target projects as needed.
+
+▶️ Run the Script
+
+Install dependencies:
+npm install
+
+Run the clone script:
+npm run start
+
+The script will:
+Fetch the source issue you configured (SOURCE_ISSUE_KEY inside clone.js)
+Create new issues in each project defined in targets.json
+Assign the requested fixVersions (and affectsVersions if configured in Jira)
+
+⚠️ Notes
+If errors about affectsVersions appear, ask your Jira admin to add the Affects Versions field to the Create Issue screen in the target project(s).
+The script never deletes or moves the original issue; it only creates new independent clones.

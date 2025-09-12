@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "node-fetch": "^3.3.2"
+  },
+  "name": "clone-master",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
