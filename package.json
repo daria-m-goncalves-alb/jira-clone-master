@@ -1,6 +1,9 @@
 {
   "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.12.2",
     "dotenv": "^17.2.2",
+    "form-data": "^4.0.4",
     "node-fetch": "^3.3.2"
   },
   "name": "clone-master",
@@ -12,7 +15,6 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js"
   },
-  
   "keywords": [],
   "author": "",
   "license": "ISC"

@@ -42,7 +42,7 @@ Run the clone script:
 npm run start
 
 The script will:
-Fetch the source issue you configured (SOURCE_ISSUE_KEY inside clone.js)
+Fetch the source issue you configured (SOURCE_ISSUE_KEY inside index.js)
 Create new issues in each project defined in targets.json
 Assign the requested fixVersions (and affectsVersions if configured in Jira)
 
