@@ -87,9 +87,4 @@ export const TARGETS = [
     //     labels: ["WebGUI"],
     //     client: ["MSS"],
     // },
-    {
-        project: "NBWEBTI",
-        affectsVersions: ["4.0.2"],
-        client: ["DOCSISHOT"],
-    },
 ];

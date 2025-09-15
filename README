@@ -38,6 +38,9 @@ Adjusts accordingly. You can add as many target projects as needed.
 Install dependencies:
 npm install
 
+Change source issue:
+<SOURCE_ISSUE_KEY> on index.js.
+
 Run the clone script:
 npm run start
 
@@ -45,6 +48,7 @@ The script will:
 Fetch the source issue you configured (SOURCE_ISSUE_KEY inside index.js)
 Create new issues in each project defined in targets.json
 Assign the requested fixVersions (and affectsVersions if configured in Jira)
+Check for attachments and zip JIRA unsupported files before uploading
 
 ⚠️ Notes
 If errors about affectsVersions appear, ask your Jira admin to add the Affects Versions field to the Create Issue screen in the target project(s).
