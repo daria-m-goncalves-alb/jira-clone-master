@@ -11,7 +11,7 @@ import { TARGETS } from "./components/targets.js";
 const JIRA_BASE = process.env.JIRA_BASE;
 const API_USER = process.env.JIRA_USER;
 const API_TOKEN = process.env.JIRA_TOKEN;
-const SOURCE_ISSUE_KEY = "<SOURCE_ISSUE_KEY>"; // issue you want to clon
+const SOURCE_ISSUE_KEY = "<SOURCE_ISSUE_KEY>"; // issue you want to clone
 
 const headers = {
     "Content-Type": "application/json",
