@@ -11,7 +11,7 @@ import { TARGETS } from "./components/targets.js";
 const JIRA_BASE = process.env.JIRA_BASE;
 const API_USER = process.env.JIRA_USER;
 const API_TOKEN = process.env.JIRA_TOKEN;
-const SOURCE_ISSUE_KEY = "<SOURCE_ISSUE_KEY>"; // issue you want to clone
+const SOURCE_ISSUE_KEY = "GRUDZDGOS-13770"; // issue you want to clone
 
 const headers = {
     "Content-Type": "application/json",
@@ -95,17 +95,49 @@ function sanitizeADF(adf) {
     function cleanContent(content) {
         return content
         .map(node => {
-            if (!node || unsupported.has(node.type)) return null; // remove unsupported nodes entirely
-            if (node.content) node.content = cleanContent(node.content); // recursive
+            if (!node) return null;
+
+            // remove unsupported node types
+            if (unsupported.has(node.type)) return null;
+            // if (node.type === "mediaGroup" && (!node.content || node.content.length === 0)) return null;
+
+            // recursively clean children first
+            if (node.content) node.content = cleanContent(node.content);
+
+            // remove mediaGroup (empty OR only contained unsupported nodes)
+            if ( node.type === "mediaGroup" && (!node.content || node.content.length === 0) ) { return null; }
+
             return node;
         })
-        .filter(n => n !== null);
+        .filter(Boolean);
     }
 
     return {
         ...adf,
         content: cleanContent(adf.content || []),
     };
+}
+
+function transformSummaryForTarget(target, originalSummary) {
+    if (!target || !originalSummary) return originalSummary;
+
+    // if stripBrackets flag is set, remove all [...], including surrounding spaces
+    if (target.stripBrackets) {
+        return originalSummary.replace(/\s*\[[^\]]*\]/g, '').trim();
+    }
+
+    // remove only the first leading [...] group
+    const summaryWithoutFirstGroup = originalSummary.replace(/^\s*\[[^\]]*\]\s*/, '');
+
+    // determine client value (support string or array)
+    const clientVal = Array.isArray(target.client) ? target.client[0] : target.client;
+
+    // if client present, prefix with it; otherwise just return the summary without first group
+    if (clientVal) {
+        return `[${clientVal}] ${summaryWithoutFirstGroup}`.trim();
+    }
+
+    return summaryWithoutFirstGroup;
 }
 
 // Add a delay between clones
@@ -130,12 +162,11 @@ async function run() {
     // 2. Create clones in each target project
     for (const target of TARGETS) {
         const originalSummary = src.fields.summary;
-        const summaryWithoutFirstGroup = originalSummary.replace(/^\[[^\]]*\]\s*/, "");
-        const newSummary = `[${target.client}] ${summaryWithoutFirstGroup}`;
+        const convertedSummary = transformSummaryForTarget(target, originalSummary);
 
         const fields = {
             ...baseFields,
-            summary: newSummary,
+            summary: convertedSummary,
             project: { key: target.project },
             fixVersions: target.affectsVersions.map((v) => ({ name: v })),
             versions: target.affectsVersions.map((v) => ({ name: v })),

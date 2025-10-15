@@ -26,9 +26,9 @@ export const TARGETS = [
     // {
     //     project: "GENXPON",
     //     affectsVersions: ["5.0.0"],
-    //     labels: ["GEN10", "SFR", "XSR140LNR"],
+    //     labels: ["GEN10", "SFR", "GR140OH"],
     //     components: ["WebGUI"],
-    //     client: ["SFR"],
+    //     stripBrackets: true,
     // },
     // {
     //     project: "GRUDZDGOS",
@@ -53,7 +53,7 @@ export const TARGETS = [
     //     affectsVersions: ["5.0.0"],
     //     labels: ["GEN10", "HOT", "XSR140LNR"],
     //     components: ["WebGUI"],
-    //     client: ["HOT"],
+    //     stripBrackets: true,
     // },
     // {
     //     project: "GRUDZDGOS",
@@ -72,19 +72,25 @@ export const TARGETS = [
     //     affectsVersions: ["5.0.0"],
     //     labels: ["GEN10", "MEO", "XSR240LNR"],
     //     components: ["WebGUI"],
-    //     client: ["MEO"],
+    //     stripBrackets: true,
     // },
     // {
     //     project: "GENXPON",
     //     affectsVersions: ["5.0.0"],
     //     labels: ["GEN10", "MEO", "GR240NHR"],
     //     components: ["WebGUI"],
-    //     client: ["MEO"],
+    //     stripBrackets: true,
     // },
     // {
     //     project: "MAINSTR",
     //     affectsVersions: ["3.7.1"],
     //     labels: ["WebGUI"],
-    //     client: ["MSS"],
+    //     client: ["MSS", "AIN", "TEL"],
+    // },
+    // {
+    //     project: "NBWEBTI",
+    //     affectsVersions: ["5.1.0"],
+    //     labels: ["WebGUI"],
+    //     client: ["FGWSFR,FGWMEO,FGWHOT"],
     // },
 ];
