@@ -1,13 +1,13 @@
 export const TARGETS = [
     // {
     //     project: "GRUDZDGOS",
-    //     affectsVersions: ["2.8.3"],
+    //     affectsVersions: ["2.14.0"],
     //     labels: ["WebGUI"],
     //     client: ["SFR"],
     // },
     // {
     //     project: "MAINSTR",
-    //     affectsVersions: ["3.2.3"],
+    //     affectsVersions: ["3.8.0"],
     //     labels: ["WebGUI"],
     //     client: ["SFR"],
     // },
@@ -32,13 +32,13 @@ export const TARGETS = [
     // },
     // {
     //     project: "GRUDZDGOS",
-    //     affectsVersions: ["2.13.0"],
+    //     affectsVersions: ["2.13.1"],
     //     labels: ["WebGUI"],
     //     client: ["HOT"],
     // },
     // {
     //     project: "MAINSTR",
-    //     affectsVersions: ["3.7.0"],
+    //     affectsVersions: ["3.7.2"],
     //     labels: ["WebGUI"],
     //     client: ["HOT"],
     // },
@@ -91,6 +91,6 @@ export const TARGETS = [
     //     project: "NBWEBTI",
     //     affectsVersions: ["5.1.0"],
     //     labels: ["WebGUI"],
-    //     client: ["FGWSFR,FGWMEO,FGWHOT"],
+    //     client: ["FGWSFR,FGWMEO,FGWHOT,FGWMSS,FGWTEL,FGWAIN,DOCSISSFR,DOCSISHOT,FGWELSFR"],
     // },
 ];
