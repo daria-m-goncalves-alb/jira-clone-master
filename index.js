@@ -169,7 +169,7 @@ async function run() {
             summary: convertedSummary,
             project: { key: target.project },
             fixVersions: target.affectsVersions.map((v) => ({ name: v })),
-            versions: baseFields.issuetype.id !== "10011" ? (target.affectsVersions.map((v) => ({ name: v }))) : undefined,
+            versions: (baseFields.issuetype.id !== "10011") ? (target.affectsVersions.map((v) => ({ name: v }))) : undefined,
             ...(target.labels && target.labels.length > 0
                 ? { labels: target.labels }
                 : {}),
