@@ -19,7 +19,7 @@ export const TARGETS = [
     // },
     // {
     //     project: "AIROHAOS",
-    //     affectsVersions: ["1.3.1"],
+    //     affectsVersions: ["1.4.0"],
     //     labels: ["WebGUI"],
     //     client: ["SFR"],
     // },
@@ -50,7 +50,7 @@ export const TARGETS = [
     // },
     // {
     //     project: "GENXPON",
-    //     affectsVersions: ["5.0.0"],
+    //     affectsVersions: ["5.1.0"],
     //     labels: ["GEN10", "HOT", "XSR140LNR"],
     //     components: ["WebGUI"],
     //     stripBrackets: true,
@@ -69,14 +69,14 @@ export const TARGETS = [
     // },
     // {
     //     project: "GENXPON",
-    //     affectsVersions: ["5.0.0"],
+    //     affectsVersions: ["5.1.0"],
     //     labels: ["GEN10", "MEO", "XSR240LNR"],
     //     components: ["WebGUI"],
     //     stripBrackets: true,
     // },
     // {
     //     project: "GENXPON",
-    //     affectsVersions: ["5.0.0"],
+    //     affectsVersions: ["5.1.0"],
     //     labels: ["GEN10", "MEO", "GR240NHR"],
     //     components: ["WebGUI"],
     //     stripBrackets: true,
