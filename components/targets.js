@@ -93,4 +93,10 @@ export const TARGETS = [
     //     labels: ["WebGUI"],
     //     client: ["FGWSFR,FGWMEO,FGWHOT,FGWMSS,FGWTEL,FGWAIN,DOCSISSFR,DOCSISHOT,FGWELSFR"],
     // },
+    // {
+    //     project: "GLGUIBEXR",
+    //     affectsVersions: ["1.0.0"],
+    //     labels: ["WebGUI"],
+    //     client: ["ONN"],
+    // },
 ];
