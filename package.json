@@ -5,6 +5,9 @@
     "dotenv": "^17.2.2",
     "form-data": "^4.0.4"
   },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
   "name": "clone-master",
   "version": "1.0.0",
   "description": "JIRA Issue Clone Tool",
