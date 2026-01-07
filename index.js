@@ -1,17 +1,53 @@
-import fetch from "node-fetch";
-import dotenv from "dotenv";
-import axios from "axios";
-import FormData from "form-data";
-import AdmZip from "adm-zip";
+#!/usr/bin/env node
+const axios = require("axios");
+const dotenv = require("dotenv");
+const FormData = require("form-data");
+const AdmZip = require("adm-zip");
+const { readFileSync } = require('fs');
+const { join, dirname } = require('path');
+
 dotenv.config();
 
-import { TARGETS } from "./components/targets.js";
+// Get the directory where the executable/script is located
+const scriptDir = process.pkg ? dirname(process.execPath) : __dirname;
+
+// Load targets configuration from external file
+let TARGETS;
+try {
+    const targetsPath = join(scriptDir, 'targets.json');
+    const targetsData = readFileSync(targetsPath, 'utf8');
+    TARGETS = JSON.parse(targetsData);
+} catch (error) {
+    console.error("❌ Error: Could not load targets.json configuration file");
+    console.error("Please ensure targets.json exists in the same directory as the executable");
+    console.error(`Expected location: ${join(scriptDir, 'targets.json')}`);
+    console.error("Error details:", error.message);
+    process.exit(1);
+}
 
 // ===== CONFIGURATION =====
 const JIRA_BASE = process.env.JIRA_BASE;
 const API_USER = process.env.JIRA_USER;
 const API_TOKEN = process.env.JIRA_TOKEN;
-const SOURCE_ISSUE_KEY = "<SOURCE_ISSUE_KEY>"; // issue you want to clone
+
+// Get SOURCE_ISSUE_KEY from command line argument
+const SOURCE_ISSUE_KEY = process.argv[2];
+
+// Validate required configuration
+if (!SOURCE_ISSUE_KEY) {
+    console.error("❌ Error: Please provide the source issue key as an argument");
+    console.error("Usage: node index.js <SOURCE_ISSUE_KEY>");
+    console.error("Example: node index.js PROJ-123");
+    process.exit(1);
+}
+
+if (!JIRA_BASE || !API_USER || !API_TOKEN) {
+    console.error("❌ Error: Missing required environment variables");
+    console.error("Please ensure your .env file contains: JIRA_BASE, JIRA_USER, JIRA_TOKEN");
+    process.exit(1);
+}
+
+console.log(`🎯 Cloning issue: ${SOURCE_ISSUE_KEY}`);
 
 const headers = {
     "Content-Type": "application/json",
@@ -20,21 +56,46 @@ const headers = {
 
 // ===== HELPERS =====
 async function jiraGet(path) {
-    const res = await fetch(`${JIRA_BASE}${path}`, { headers });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    const response = await axios.get(`${JIRA_BASE}${path}`, { headers });
+    return response.data;
 }
 
+// Real jiraPost function - comment for testing with dummy
 async function jiraPost(path, body, extraHeaders = {}) {
-    const res = await fetch(`${JIRA_BASE}${path}`, {
-        method: "POST",
-        headers: { ...headers, ...extraHeaders },
-        body: JSON.stringify(body),
+    const response = await axios.post(`${JIRA_BASE}${path}`, body, {
+        headers: { ...headers, ...extraHeaders }
     });
-    if (!res.ok) throw new Error(await res.text());
-    const text = await res.text();
-    return text ? JSON.parse(text) : {};
+    return response.data || {};
 }
+
+// Dummy jiraPost function for testing
+// async function jiraPost(path, body, extraHeaders = {}) {
+//     console.log(`🧪 DUMMY API CALL: POST ${JIRA_BASE}${path}`);
+//     console.log(`📋 Request Body:`, JSON.stringify(body, null, 2));
+    
+//     // Simulate API delay
+//     await new Promise(resolve => setTimeout(resolve, 100));
+    
+//     // Mock responses based on the path
+//     if (path === "/rest/api/3/issue") {
+//         // Mock issue creation response
+//         const mockKey = `TEST-${Math.floor(Math.random() * 1000)}`;
+//         console.log(`🎭 Mock Response: Created issue ${mockKey}`);
+//         return {
+//             key: mockKey,
+//             id: Math.floor(Math.random() * 100000).toString(),
+//             self: `${JIRA_BASE}/rest/api/3/issue/${mockKey}`
+//         };
+//     } else if (path === "/rest/api/3/issueLink") {
+//         // Mock issue link response
+//         console.log(`🎭 Mock Response: Created link between ${body.inwardIssue.key} and ${body.outwardIssue.key}`);
+//         return {};
+//     } else {
+//         // Generic mock response
+//         console.log(`🎭 Mock Response: Success`);
+//         return {};
+//     }
+// }
 
 // Allow JIRA unsupported attachment types by zipping them first
 async function cloneAttachments(srcIssue, newIssueKey) {
@@ -44,8 +105,11 @@ async function cloneAttachments(srcIssue, newIssueKey) {
         console.log(`📂 Processing attachment: ${att.filename}`);
 
         // Download the attachment from Jira
-        const res = await fetch(att.content, { headers });
-        const buffer = Buffer.from(await res.arrayBuffer());
+        const response = await axios.get(att.content, {
+            headers,
+            responseType: 'arraybuffer'
+        });
+        const buffer = Buffer.from(response.data);
 
         let uploadBuffer = buffer;
         let uploadName = att.filename;

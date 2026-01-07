@@ -1,0 +1,7 @@
+
+.env
+examples/**
+dist/**
+node_modules
+package-lock.json
+!**/.gitkeep

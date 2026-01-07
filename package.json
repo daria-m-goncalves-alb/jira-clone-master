@@ -1,21 +1,38 @@
 {
   "dependencies": {
     "adm-zip": "^0.5.16",
-    "axios": "^1.12.2",
+    "axios": "^0.27.2",
     "dotenv": "^17.2.2",
-    "form-data": "^4.0.4",
-    "node-fetch": "^3.3.2"
+    "form-data": "^4.0.4"
   },
   "name": "clone-master",
   "version": "1.0.0",
-  "description": "",
-  "type": "module",
+  "description": "JIRA Issue Clone Tool",
   "main": "index.js",
+  "bin": {
+    "jira-clone": "./index.js"
+  },
+  "pkg": {
+    "scripts": "./index.js",
+    "assets": [
+      "./.env"
+    ],
+    "targets": [
+      "node18-win-x64",
+      "node18-macos-x64",
+      "node18-linux-x64"
+    ],
+    "outputPath": "dist"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node index.js",
+    "build": "pkg .",
+    "build:win": "pkg . --targets node18-win-x64",
+    "build:mac": "pkg . --targets node18-macos-x64",
+    "build:linux": "pkg . --targets node18-linux-x64"
   },
-  "keywords": [],
+  "keywords": ["jira", "clone", "tool"],
   "author": "",
   "license": "ISC"
 }

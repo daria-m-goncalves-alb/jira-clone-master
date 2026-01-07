@@ -1,0 +1,21 @@
+[
+  {
+    "project": "EXAMPLE1",
+    "affectsVersions": ["1.0.0"],
+    "labels": ["WebGUI"],
+    "client": ["CLIENT1"]
+  },
+  {
+    "project": "EXAMPLE2", 
+    "affectsVersions": ["2.0.0"],
+    "labels": ["WebGUI"],
+    "components": ["Frontend"],
+    "client": ["CLIENT2"]
+  },
+  {
+    "project": "EXAMPLE3",
+    "affectsVersions": ["3.0.0"], 
+    "labels": ["API", "Backend"],
+    "stripBrackets": true
+  }
+]

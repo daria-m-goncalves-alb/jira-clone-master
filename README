@@ -42,13 +42,41 @@ Change source issue:
 <SOURCE_ISSUE_KEY> on index.js.
 
 Run the clone script:
-npm run start
+npm run start PROJ-123
 
 The script will:
 Fetch the source issue you configured (SOURCE_ISSUE_KEY inside index.js)
 Create new issues in each project defined in targets.json
 Assign the requested fixVersions (and affectsVersions if configured in Jira)
 Check for attachments and zip JIRA unsupported files before uploading
+
+📦 Building Executable Package
+
+This project can be packaged into standalone executables that don't require Node.js installation:
+
+Build for all platforms:
+npm run build
+
+Build for specific platforms:
+npm run build:win     # Windows .exe
+npm run build:mac     # macOS binary  
+npm run build:linux   # Linux binary
+
+The executables will be created in the `dist/` directory.
+
+✅ Distribution Benefits:
+- No Node.js installation required on target machines
+- No source code visible to end users
+- Single executable file (~48MB) contains everything needed
+- Cross-platform compatible
+
+📋 Using the Executable:
+1. Copy the executable file (e.g., `clone-master.exe`) to target machine
+2. Create a `.env` file in the same directory with your JIRA credentials
+3. Create a `targets.json` file in the same directory with your target project configurations
+4. Run the executable: `./clone-master.exe PROJ-123`
+
+⚠️ Important: Both `.env` and `targets.json` files must be located in the same directory as the executable for the application to work properly.
 
 ⚠️ Notes
 If errors about affectsVersions appear, ask your Jira admin to add the Affects Versions field to the Create Issue screen in the target project(s).
