@@ -60,6 +60,19 @@ async function jiraGet(path) {
     return response.data;
 }
 
+// Get available fields for an issue type in a project
+async function getAvailableFields(projectKey, issueTypeId) {
+    try {
+        const metadata = await jiraGet(`/rest/api/3/issue/createmeta?projectKeys=${projectKey}&expand=projects.issuetypes.fields`);
+        const project = metadata.projects?.[0];
+        const issueType = project?.issuetypes?.find(it => it.id === issueTypeId);
+        return issueType?.fields || {};
+    } catch (err) {
+        console.warn(`⚠️ Could not fetch create metadata for project ${projectKey}:`, err.message);
+        return {};
+    }
+}
+
 // Real jiraPost function - comment for testing with dummy
 async function jiraPost(path, body, extraHeaders = {}) {
     const response = await axios.post(`${JIRA_BASE}${path}`, body, {
@@ -97,12 +110,20 @@ async function jiraPost(path, body, extraHeaders = {}) {
 //     }
 // }
 
-// Allow JIRA unsupported attachment types by zipping them first
-async function cloneAttachments(srcIssue, newIssueKey) {
+// Clone non-image attachments (images in description are handled via media nodes)
+async function cloneNonImageAttachments(srcIssue, newIssueKey) {
     const attachments = srcIssue.fields.attachment || [];
+    const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp']);
 
     for (const att of attachments) {
-        console.log(`📂 Processing attachment: ${att.filename}`);
+        // Skip image files - they're handled via media nodes in the description
+        const fileExt = att.filename.substring(att.filename.lastIndexOf('.')).toLowerCase();
+        if (imageExtensions.has(fileExt)) {
+            console.log(`📸 Skipping image attachment (handled in description): ${att.filename}`);
+            continue;
+        }
+
+        console.log(`📄 Processing non-image attachment: ${att.filename} (ID: ${att.id})`);
 
         // Download the attachment from Jira
         const response = await axios.get(att.content, {
@@ -129,8 +150,7 @@ async function cloneAttachments(srcIssue, newIssueKey) {
         form.append("file", uploadBuffer, uploadName);
 
         try {
-            // Axios handles the multipart upload correctly
-            const response = await axios.post(
+            await axios.post(
                 `${JIRA_BASE}/rest/api/3/issue/${newIssueKey}/attachments`,
                 form,
                 {
@@ -143,7 +163,7 @@ async function cloneAttachments(srcIssue, newIssueKey) {
                     maxBodyLength: Infinity,
                 }
             );
-            console.log(`✅ Uploaded attachment: ${uploadName}`);
+            console.log(`✅ Uploaded non-image attachment: ${uploadName}`);
         } catch (err) {
             console.error(`❌ Failed to upload ${uploadName}:`, err.response?.data || err.message);
         }
@@ -154,22 +174,22 @@ async function cloneAttachments(srcIssue, newIssueKey) {
 function sanitizeADF(adf) {
     if (!adf || adf.type !== "doc") return { type: "doc", version: 1, content: [] };
 
-    const unsupported = new Set(["mediaSingle", "media", "mediaInline", "inlineCard", "blockCard", "mention"]);
+    // Keep media nodes (images) but remove other unsupported types
+    const unsupported = new Set(["inlineCard", "blockCard", "mention"]);
 
     function cleanContent(content) {
         return content
         .map(node => {
             if (!node) return null;
 
-            // remove unsupported node types
+            // remove unsupported node types (but preserve media/images)
             if (unsupported.has(node.type)) return null;
-            // if (node.type === "mediaGroup" && (!node.content || node.content.length === 0)) return null;
 
             // recursively clean children first
             if (node.content) node.content = cleanContent(node.content);
 
-            // remove mediaGroup (empty OR only contained unsupported nodes)
-            if ( node.type === "mediaGroup" && (!node.content || node.content.length === 0) ) { return null; }
+            // remove mediaGroup only if it's empty (keep it if it has media nodes)
+            if (node.type === "mediaGroup" && (!node.content || node.content.length === 0)) { return null; }
 
             return node;
         })
@@ -216,36 +236,67 @@ async function run() {
 
     const sanitizedDescription = sanitizeADF(src.fields.description);
 
-    const baseFields = {
-        summary: src.fields.summary,
-        description: sanitizedDescription,
-        issuetype: { id: src.fields.issuetype.id },
-        assignee: src.fields.assignee ? { id: src.fields.assignee.accountId } : undefined,
-    };
-
     // 2. Create clones in each target project
     for (const target of TARGETS) {
         const originalSummary = src.fields.summary;
         const convertedSummary = transformSummaryForTarget(target, originalSummary);
 
+        // Get available fields for this issue type in the target project
+        const availableFields = await getAvailableFields(target.project, src.fields.issuetype.id);
+
         const fields = {
-            ...baseFields,
             summary: convertedSummary,
+            issuetype: { id: src.fields.issuetype.id },
             project: { key: target.project },
-            fixVersions: target.affectsVersions.map((v) => ({ name: v })),
-            versions: (baseFields.issuetype.id !== "10011") ? (target.affectsVersions.map((v) => ({ name: v }))) : undefined,
-            ...(target.labels && target.labels.length > 0
-                ? { labels: target.labels }
-                : {}),
-            ...(target.components && target.components.length > 0
-                ? { components: target.components.map((v) => ({ name: v })) }
-                : {}),
         };
 
+        // Only add assignee if it exists and the field is available
+        if (src.fields.assignee && availableFields.assignee) {
+            fields.assignee = { id: src.fields.assignee.accountId };
+        }
+
+        // Try 'versions' first (Affects Versions - for Bugs), then 'fixVersions' (Fixed In Version - for Stories)
+        if (target.affectsVersions && target.affectsVersions.length > 0) {
+            const versionField = availableFields.versions ? 'versions' : (availableFields.fixVersions ? 'fixVersions' : null);
+            if (versionField) {
+                fields[versionField] = target.affectsVersions.map((v) => ({ name: v }));
+            }
+        }
+
+        // Add labels if provided and available
+        if (target.labels && target.labels.length > 0 && availableFields.labels) {
+            fields.labels = target.labels;
+        }
+
+        // Add components if provided and available
+        if (target.components && target.components.length > 0 && availableFields.components) {
+            fields.components = target.components.map((v) => ({ name: v }));
+        }
+
         try {
+            // Create issue WITHOUT description initially to avoid stale attachment references
             const newIssue = await jiraPost("/rest/api/3/issue", { fields });
-            console.log(`✅ Created clone ${newIssue.key} in project ${target.project} (fixVersions: ${target.affectsVersions.join(", ")})`);
-            await cloneAttachments(src, newIssue.key);
+            console.log(`✅ Created clone ${newIssue.key} in project ${target.project}`);
+            
+            // Update the issue with the description containing media nodes
+            const updateFields = {
+                description: sanitizedDescription
+            };
+            
+            try {
+                await axios.put(
+                    `${JIRA_BASE}/rest/api/3/issue/${newIssue.key}`,
+                    { fields: updateFields },
+                    { headers }
+                );
+                console.log(`✅ Description with images updated in ${newIssue.key}`);
+            } catch (updateErr) {
+                console.error(`❌ Failed to update description in ${newIssue.key}:`, updateErr.response?.data || updateErr.message);
+            }
+            
+            // Clone any non-image file attachments
+            await cloneNonImageAttachments(src, newIssue.key);
+            
             try {
                 await jiraPost("/rest/api/3/issueLink", {
                     type: { name: "Blocks" },
@@ -258,7 +309,8 @@ async function run() {
             }
             await sleep(1000); // Add a 1 second delay between clones
         } catch (err) {
-            console.error(`❌ Failed to create clone in ${target.project}:`, err.message);
+            console.error(`❌ Failed to create clone in ${target.project}:`, err.response?.data || err.message);
+            console.error(`📋 Request fields:`, JSON.stringify(fields, null, 2));
         }
     }
 
