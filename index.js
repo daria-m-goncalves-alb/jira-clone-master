@@ -5,6 +5,7 @@ const FormData = require("form-data");
 const AdmZip = require("adm-zip");
 const { readFileSync } = require('fs');
 const { join, dirname } = require('path');
+let mediaIdMap = new Map();
 
 dotenv.config();
 
@@ -96,11 +97,7 @@ async function getAvailableFields(projectKey, issueTypeId) {
                 acc[key] = val.name;
                 return acc;
             }, {});
-        
-        // if (Object.keys(customFields).length > 0) {
-        //     console.log(`📋 Available custom fields in ${projectKey}:`, customFields);
-        // }
-        
+
         return fields;
     } catch (err) {
         console.warn(`⚠️ Could not fetch create metadata for project ${projectKey}:`, err.message);
@@ -164,11 +161,14 @@ async function cloneNonImageAttachments(srcIssue, newIssueKey) {
         // Skip image files - they're handled via media nodes in the description
         const fileExt = att.filename.substring(att.filename.lastIndexOf('.')).toLowerCase();
         if (imageExtensions.has(fileExt)) {
-            console.log(`📸 Skipping image attachment (handled in description): ${att.filename}`);
-            continue;
+            // Only skip if the image was successfully mapped to a media node
+            if (mediaIdMap.has(att.id)) {
+                console.log(`🖼️ Image already embedded: ${att.filename}`);
+                continue;
+            }
         }
 
-        console.log(`📄 Processing non-image attachment: ${att.filename} (ID: ${att.id})`);
+        // console.log(`📄 Processing non-image attachment: ${att.filename} (ID: ${att.id})`);
 
         // Download the attachment from Jira
         const response = await axios.get(att.content, {
@@ -208,42 +208,292 @@ async function cloneNonImageAttachments(srcIssue, newIssueKey) {
                     maxBodyLength: Infinity,
                 }
             );
-            console.log(`✅ Uploaded non-image attachment: ${uploadName}`);
+            // console.log(`✅ Uploaded non-image attachment: ${uploadName}`);
         } catch (err) {
             console.error(`❌ Failed to upload ${uploadName}:`, err.response?.data || err.message);
         }
     }
 }
 
-// Atlassian Document Format (ADF)
-function sanitizeADF(adf) {
-    if (!adf || adf.type !== "doc") return { type: "doc", version: 1, content: [] };
+function extractMediaIds(adf) {
+    const mediaIds = new Set();
 
-    // Keep media nodes (images) but remove other unsupported types
-    const unsupported = new Set(["inlineCard", "blockCard", "mention"]);
+    function walk(nodes = []) {
+        for (const node of nodes) {
+            if (!node) continue;
 
-    function cleanContent(content) {
-        return content
-        .map(node => {
-            if (!node) return null;
+            if (
+                node.type === "media" &&
+                node.attrs?.id &&
+                node.attrs?.type === "file"
+            ) {
+                mediaIds.add(node.attrs.id);
+            }
 
-            // remove unsupported node types (but preserve media/images)
-            if (unsupported.has(node.type)) return null;
+            if (node.content) walk(node.content);
+        }
+    }
 
-            // recursively clean children first
-            if (node.content) node.content = cleanContent(node.content);
+    if (adf?.content) walk(adf.content);
+    return [...mediaIds];
+}
 
-            // remove mediaGroup only if it's empty (keep it if it has media nodes)
-            if (node.type === "mediaGroup" && (!node.content || node.content.length === 0)) { return null; }
+async function downloadImageAttachments(srcIssue, mediaIds) {
+    const images = new Map();
 
-            return node;
-        })
+    const attachments = srcIssue.fields.attachment || [];
+    for (const att of attachments) {
+        if (mediaIds.includes(att.id)) {
+            const res = await axios.get(att.content, {
+                headers,
+                responseType: "arraybuffer"
+            });
+
+            images.set(att.id, {
+                filename: att.filename,
+                buffer: Buffer.from(res.data),
+                mimeType: att.mimeType
+            });
+        }
+    }
+
+    return images;
+}
+
+async function uploadImages(newIssueKey, images) {
+    const idMap = new Map();
+
+    for (const [oldId, img] of images.entries()) {
+        const form = new FormData();
+        form.append("file", img.buffer, img.filename);
+
+        const res = await axios.post(
+            `${JIRA_BASE}/rest/api/3/issue/${newIssueKey}/attachments`,
+            form,
+            {
+                headers: {
+                    Authorization: headers.Authorization,
+                    "X-Atlassian-Token": "no-check",
+                    ...form.getHeaders()
+                }
+            }
+        );
+
+        const newAttachment = res.data?.[0];
+        if (newAttachment?.id) {
+            idMap.set(oldId, newAttachment.id);
+            // console.log(`🖼️ Uploaded image ${img.filename}`);
+        }
+    }
+
+    return idMap;
+}
+
+function normalizeADF(adf) {
+    function fixNode(node) {
+        if (!node) return null;
+
+        // Paragraph must have content
+        if (node.type === "paragraph") {
+            if (!node.content || node.content.length === 0) {
+                node.content = [{ type: "text", text: " " }];
+            }
+        }
+
+        // ListItem must contain a paragraph
+        if (node.type === "listItem") {
+            if (!node.content || node.content.length === 0) {
+                node.content = [{
+                    type: "paragraph",
+                    content: [{ type: "text", text: " " }]
+                }];
+            }
+        }
+
+        // mediaSingle must contain media
+        if (node.type === "mediaSingle") {
+            if (!node.content || node.content.length === 0) {
+                return null;
+            }
+        }
+
+        if (node.content) {
+            node.content = node.content
+                .map(fixNode)
+                .filter(Boolean);
+        }
+
+        return node;
+    }
+
+    const content = (adf.content || [])
+        .map(fixNode)
         .filter(Boolean);
+
+    return {
+        type: "doc",
+        version: 1,
+        content: content.length
+            ? content
+            : [{
+                type: "paragraph",
+                content: [{ type: "text", text: " " }]
+            }]
+    };
+}
+
+function rewriteMediaIds(adf, idMap) {
+    function walk(node) {
+        if (!node) return null;
+
+        // Rewrite media node IDs
+        if (
+            node.type === "media" &&
+            node.attrs?.id &&
+            idMap.has(node.attrs.id)
+        ) {
+            return {
+                ...node,
+                attrs: {
+                    ...node.attrs,
+                    id: idMap.get(node.attrs.id),
+                    collection: "jira-issue"
+                }
+            };
+        }
+
+        // Recurse normally — DO NOT drop content
+        if (node.content) {
+            return {
+                ...node,
+                content: node.content
+                    .map(walk)
+                    .filter(Boolean)
+            };
+        }
+
+        return node;
     }
 
     return {
-        ...adf,
-        content: cleanContent(adf.content || []),
+        type: "doc",
+        version: 1,
+        content: (adf.content || [])
+            .map(walk)
+            .filter(Boolean)
+    };
+}
+
+function finalJiraADF(adf) {
+    const content = [];
+
+    for (const node of adf.content || []) {
+        // ❌ hardBreak is INLINE ONLY → drop it
+        if (node.type === "hardBreak") continue;
+
+        // ❌ text is INLINE ONLY → wrap
+        if (node.type === "text") {
+            content.push({
+                type: "paragraph",
+                content: [node]
+            });
+            continue;
+        }
+
+        // ✅ ensure paragraphs have content
+        if (node.type === "paragraph" && (!node.content || node.content.length === 0)) {
+            node.content = [{ type: "text", text: " " }];
+        }
+
+        content.push(node);
+    }
+
+    return {
+        type: "doc",
+        version: 1,
+        content: content.length
+            ? content
+            : [{
+                type: "paragraph",
+                content: [{ type: "text", text: " " }]
+            }]
+    };
+}
+
+function forceBlockADF(adf) {
+    const blocks = [];
+
+    for (const node of adf.content || []) {
+        // Wrap stray text nodes
+        if (node.type === "text") {
+            blocks.push({
+                type: "paragraph",
+                content: [node]
+            });
+            continue;
+        }
+
+        // Drop invalid nodes
+        if (!node.type) continue;
+
+        // Ensure paragraphs have content
+        if (node.type === "paragraph" && (!node.content || node.content.length === 0)) {
+            node.content = [{ type: "text", text: " " }];
+        }
+
+        blocks.push(node);
+    }
+
+    return {
+        type: "doc",
+        version: 1,
+        content: blocks.length
+            ? blocks
+            : [{
+                type: "paragraph",
+                content: [{ type: "text", text: " " }]
+            }]
+    };
+}
+
+// Atlassian Document Format (ADF)
+function sanitizeADF(adf) {
+    if (!adf || adf.type !== "doc") {
+        return { type: "doc", version: 1, content: [] };
+    }
+
+    function clean(nodes = [], parentType = null) {
+        return nodes
+            .map(node => {
+                if (!node) return null;
+
+                // ❌ remove listItem ONLY if not inside a list
+                if (node.type === "listItem" && parentType !== "bulletList" && parentType !== "orderedList") {
+                    return null;
+                }
+
+                // recursively clean, passing the current node type as parent
+                if (node.content) {
+                    node.content = clean(node.content, node.type);
+                }
+
+                // ❌ remove empty bullet/ordered lists
+                if (
+                    (node.type === "bulletList" || node.type === "orderedList") &&
+                    (!node.content || node.content.length === 0)
+                ) {
+                    return null;
+                }
+
+                return node;
+            })
+            .filter(Boolean);
+    }
+
+    return {
+        type: "doc",
+        version: 1,
+        content: clean(adf.content || [], "doc")
     };
 }
 
@@ -278,8 +528,6 @@ function sleep(ms) {
 async function run() {
     // Fetch the source issue
     const src = await jiraGet(`/rest/api/3/issue/${SOURCE_ISSUE_KEY}`);
-
-    const sanitizedDescription = sanitizeADF(src.fields.description);
 
     // 2. Create clones in each target project
     for (const target of TARGETS) {
@@ -350,22 +598,44 @@ async function run() {
             const newIssue = await jiraPost("/rest/api/3/issue", { fields });
             console.log(`✅ Created clone ${newIssue.key} in project ${target.project}`);
             
-            // Update the issue with the description containing media nodes
-            const updateFields = {
-                description: sanitizedDescription
-            };
-            
+            // --- INLINE IMAGE SAFE DESCRIPTION CLONE ---
+
+            const sourceDescription = sanitizeADF(src.fields.description);
+
+            // 1. Extract media IDs
+            const mediaIds = extractMediaIds(sourceDescription);
+
+            // 2. Download images
+            const images = await downloadImageAttachments(src, mediaIds);
+
+            // 3. Upload images first
+            mediaIdMap = await uploadImages(newIssue.key, images);
+            await sleep(500); // Jira attachment indexing delay
+
+            // 4. Rewrite ADF with new attachment IDs
+            const rewrittenDescription = finalJiraADF(
+                forceBlockADF(
+                    normalizeADF(
+                        rewriteMediaIds(sourceDescription, mediaIdMap)
+                    )
+                )
+            );
+
+            // 5. Update description
             try {
                 await axios.put(
                     `${JIRA_BASE}/rest/api/3/issue/${newIssue.key}`,
-                    { fields: updateFields },
+                    { fields: { description: rewrittenDescription } },
                     { headers }
                 );
                 console.log(`✅ Description with images updated in ${newIssue.key}`);
-            } catch (updateErr) {
-                console.error(`❌ Failed to update description in ${newIssue.key}:`, updateErr.response?.data || updateErr.message);
+            } catch (err) {
+                console.error(
+                    `❌ Failed to update description in ${newIssue.key}:`,
+                    err.response?.data || err.message
+                );
             }
-            
+
             // Clone any non-image file attachments
             await cloneNonImageAttachments(src, newIssue.key);
             
