@@ -153,7 +153,7 @@ async function jiraPost(path, body, extraHeaders = {}) {
 //   Name: "Test" - Inward: is tested by / Outward: tests
 
 // Clone non-image attachments (images in description are handled via media nodes)
-async function cloneNonImageAttachments(srcIssue, newIssueKey) {
+async function cloneNonImageAttachments(srcIssue, newIssueKey, embeddedAttachmentIds = new Set()) {
     const attachments = srcIssue.fields.attachment || [];
     const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp']);
 
@@ -161,8 +161,8 @@ async function cloneNonImageAttachments(srcIssue, newIssueKey) {
         // Skip image files - they're handled via media nodes in the description
         const fileExt = att.filename.substring(att.filename.lastIndexOf('.')).toLowerCase();
         if (imageExtensions.has(fileExt)) {
-            // Only skip if the image was successfully mapped to a media node
-            if (mediaIdMap.has(att.id)) {
+            // Only skip if the image was successfully embedded in the description
+            if (embeddedAttachmentIds.has(att.id)) {
                 console.log(`🖼️ Image already embedded: ${att.filename}`);
                 continue;
             }
@@ -238,26 +238,49 @@ function extractMediaIds(adf) {
     return [...mediaIds];
 }
 
+// Resolve the Atlassian Media UUID for an attachment by following the content URL redirect.
+// Jira Cloud redirects /rest/api/3/attachment/content/{id} → https://api.media.atlassian.com/file/{UUID}/...
+async function getMediaUUID(contentUrl) {
+    try {
+        const res = await axios.get(contentUrl, {
+            headers,
+            maxRedirects: 0,
+            validateStatus: () => true
+        });
+        const location = res.headers?.location || '';
+        const match = location.match(/\/file\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        return match ? match[1] : null;
+    } catch {
+        return null;
+    }
+}
+
 async function downloadImageAttachments(srcIssue, mediaIds) {
     const images = new Map();
+    const embeddedAttachmentIds = new Set(); // numeric att.id values resolved to ADF media nodes
 
     const attachments = srcIssue.fields.attachment || [];
     for (const att of attachments) {
-        if (mediaIds.includes(att.id)) {
-            const res = await axios.get(att.content, {
-                headers,
-                responseType: "arraybuffer"
-            });
+        // Resolve the real media UUID via redirect; fall back to numeric REST ID
+        const mediaUUID = await getMediaUUID(att.content);
+        const effectiveId = mediaUUID || att.id;
 
-            images.set(att.id, {
-                filename: att.filename,
-                buffer: Buffer.from(res.data),
-                mimeType: att.mimeType
-            });
-        }
+        if (!mediaIds.includes(effectiveId)) continue;
+
+        const res = await axios.get(att.content, {
+            headers,
+            responseType: "arraybuffer"
+        });
+
+        images.set(effectiveId, {
+            filename: att.filename,
+            buffer: Buffer.from(res.data),
+            mimeType: att.mimeType
+        });
+        embeddedAttachmentIds.add(att.id);
     }
 
-    return images;
+    return { images, embeddedAttachmentIds };
 }
 
 async function uploadImages(newIssueKey, images) {
@@ -281,7 +304,9 @@ async function uploadImages(newIssueKey, images) {
 
         const newAttachment = res.data?.[0];
         if (newAttachment?.id) {
-            idMap.set(oldId, newAttachment.id);
+            // Try to resolve the new media UUID; fall back to numeric REST ID
+            const newMediaUUID = await getMediaUUID(newAttachment.content);
+            idMap.set(oldId, newMediaUUID || newAttachment.id);
             // console.log(`🖼️ Uploaded image ${img.filename}`);
         }
     }
@@ -346,20 +371,20 @@ function rewriteMediaIds(adf, idMap) {
     function walk(node) {
         if (!node) return null;
 
-        // Rewrite media node IDs
-        if (
-            node.type === "media" &&
-            node.attrs?.id &&
-            idMap.has(node.attrs.id)
-        ) {
-            return {
-                ...node,
-                attrs: {
-                    ...node.attrs,
-                    id: idMap.get(node.attrs.id),
-                    collection: "jira-issue"
-                }
-            };
+        // Rewrite media node IDs — drop if not remapped (stale ID causes ATTACHMENT_VALIDATION_ERROR)
+        if (node.type === "media" && node.attrs?.id) {
+            if (idMap.has(node.attrs.id)) {
+                return {
+                    ...node,
+                    attrs: {
+                        ...node.attrs,
+                        id: idMap.get(node.attrs.id),
+                        collection: "jira-issue"
+                    }
+                };
+            } else {
+                return null; // Can't remap → drop; normalizeADF will remove the empty mediaSingle
+            }
         }
 
         // Recurse normally — DO NOT drop content
@@ -606,7 +631,7 @@ async function run() {
             const mediaIds = extractMediaIds(sourceDescription);
 
             // 2. Download images
-            const images = await downloadImageAttachments(src, mediaIds);
+            const { images, embeddedAttachmentIds } = await downloadImageAttachments(src, mediaIds);
 
             // 3. Upload images first
             mediaIdMap = await uploadImages(newIssue.key, images);
@@ -637,7 +662,7 @@ async function run() {
             }
 
             // Clone any non-image file attachments
-            await cloneNonImageAttachments(src, newIssue.key);
+            await cloneNonImageAttachments(src, newIssue.key, embeddedAttachmentIds);
             
             try {
                 // Use link type from target config or default to "Cloners" or "relates to"
