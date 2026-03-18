@@ -83,6 +83,16 @@ async function getAvailableLinkTypes() {
         return [];
     }
 }
+async function getProjectComponents(projectKey) {
+    try {
+        const components = await jiraGet(`/rest/api/3/project/${projectKey}/components`);
+        return new Set(components.map(c => c.name));
+    } catch (err) {
+        console.warn(`⚠️ Could not fetch components for ${projectKey}:`, err.message);
+        return new Set();
+    }
+}
+
 async function getAvailableFields(projectKey, issueTypeId) {
     try {
         const metadata = await jiraGet(`/rest/api/3/issue/createmeta?projectKeys=${projectKey}&expand=projects.issuetypes.fields`);
@@ -533,12 +543,14 @@ function transformSummaryForTarget(target, originalSummary) {
     // remove only the first leading [...] group
     const summaryWithoutFirstGroup = originalSummary.replace(/^\s*\[[^\]]*\]\s*/, '');
 
-    // determine client value (support string or array)
-    const clientVal = Array.isArray(target.client) ? target.client[0] : target.client;
+    // determine client prefix (support string or array)
+    const clientPrefix = Array.isArray(target.client)
+        ? target.client.map(c => `[${c}]`).join(' ')
+        : target.client ? `[${target.client}]` : null;
 
     // if client present, prefix with it; otherwise just return the summary without first group
-    if (clientVal) {
-        return `[${clientVal}] ${summaryWithoutFirstGroup}`.trim();
+    if (clientPrefix) {
+        return `${clientPrefix} ${summaryWithoutFirstGroup}`.trim();
     }
 
     return summaryWithoutFirstGroup;
@@ -560,7 +572,10 @@ async function run() {
         const convertedSummary = transformSummaryForTarget(target, originalSummary);
 
         // Get available fields for this issue type in the target project
-        const availableFields = await getAvailableFields(target.project, src.fields.issuetype.id);
+        const [availableFields, targetComponentNames] = await Promise.all([
+            getAvailableFields(target.project, src.fields.issuetype.id),
+            getProjectComponents(target.project),
+        ]);
 
         // Base fields - always required
         const fields = {
@@ -573,7 +588,11 @@ async function run() {
         const fieldsToPreserve = {
             assignee: () => src.fields.assignee ? { id: src.fields.assignee.accountId } : null,
             labels: () => src.fields.labels && src.fields.labels.length > 0 ? src.fields.labels : null,
-            components: () => src.fields.components && src.fields.components.length > 0 ? src.fields.components.map((v) => ({ name: v.name })) : null,
+            components: () => {
+                if (!src.fields.components || src.fields.components.length === 0) return null;
+                const valid = src.fields.components.filter(c => targetComponentNames.has(c.name)).map(c => ({ name: c.name }));
+                return valid.length > 0 ? valid : null;
+            },
             priority: () => src.fields.priority ? { id: src.fields.priority.id } : null,
             reporter: () => src.fields.reporter ? { id: src.fields.reporter.accountId } : null,
         };
