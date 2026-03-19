@@ -615,6 +615,10 @@ async function run() {
             }
         }
 
+        if (target.fixVersions && target.fixVersions.length > 0 && availableFields.fixVersions) {
+            fields.fixVersions = target.fixVersions.map((v) => ({ name: v }));
+        }
+
         if (target.labels && target.labels.length > 0 && availableFields.labels) {
             fields.labels = target.labels;
         }
