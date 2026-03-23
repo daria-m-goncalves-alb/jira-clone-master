@@ -115,6 +115,23 @@ async function getAvailableFields(projectKey, issueTypeId) {
     }
 }
 
+async function getDefaultNonSubtaskIssueTypeId(projectKey) {
+    try {
+        const metadata = await jiraGet(`/rest/api/3/issue/createmeta?projectKeys=${projectKey}&expand=projects.issuetypes`);
+        const issueTypes = metadata.projects?.[0]?.issuetypes || [];
+
+        // Prefer Story if available, otherwise first non-subtask type
+        const storyType = issueTypes.find(it => !it.subtask && /story/i.test(it.name));
+        if (storyType) return storyType.id;
+
+        const defaultType = issueTypes.find(it => !it.subtask);
+        return defaultType ? defaultType.id : null;
+    } catch (err) {
+        console.warn(`⚠️ Could not fetch issue types for project ${projectKey}:`, err.message);
+        return null;
+    }
+}
+
 // Real jiraPost function - comment for testing with dummy
 async function jiraPost(path, body, extraHeaders = {}) {
     const response = await axios.post(`${JIRA_BASE}${path}`, body, {
@@ -571,16 +588,35 @@ async function run() {
         const originalSummary = src.fields.summary;
         const convertedSummary = transformSummaryForTarget(target, originalSummary);
 
+        // Determine target issue type: convert sub-task to Story if configured or auto-resolve
+        let targetIssueTypeId = src.fields.issuetype.id;
+
+        if (src.fields.issuetype?.subtask) {
+            if (target.subtaskToStoryTypeId) {
+                targetIssueTypeId = target.subtaskToStoryTypeId;
+                console.log(`ℹ️ Source is sub-task; using configured target.subtaskToStoryTypeId=${targetIssueTypeId} for ${target.project}`);
+            } else {
+                const fallbackTypeId = await getDefaultNonSubtaskIssueTypeId(target.project);
+                if (fallbackTypeId) {
+                    targetIssueTypeId = fallbackTypeId;
+                    console.log(`ℹ️ Source is sub-task; auto-mapped to non-subtask issueTypeId=${targetIssueTypeId} for ${target.project}`);
+                } else {
+                    console.error(`❌ Could not map sub-task issue type for ${target.project}. Add target.subtaskToStoryTypeId to your targets.json.`);
+                    continue;
+                }
+            }
+        }
+
         // Get available fields for this issue type in the target project
         const [availableFields, targetComponentNames] = await Promise.all([
-            getAvailableFields(target.project, src.fields.issuetype.id),
+            getAvailableFields(target.project, targetIssueTypeId),
             getProjectComponents(target.project),
         ]);
 
         // Base fields - always required
         const fields = {
             summary: convertedSummary,
-            issuetype: { id: src.fields.issuetype.id },
+            issuetype: { id: targetIssueTypeId },
             project: { key: target.project },
         };
 
