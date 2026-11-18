@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-const scriptDir = process.pkg ? dirname(process.execPath) : __dirname;
+const scriptDir = process.pkg ? dirname(process.execPath) : join(__dirname, '..');
 
 function loadTargets() {
     try {

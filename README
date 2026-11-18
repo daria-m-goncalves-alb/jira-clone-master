@@ -48,7 +48,8 @@ The script will:
 Fetch the source issue you configured (SOURCE_ISSUE_KEY inside index.js)
 Create new issues in each project defined in targets.json
 Assign the requested fixVersions (and affectsVersions if configured in Jira)
-Check for attachments and zip JIRA unsupported files before uploading
+Copy Jira Web links to each clone
+Copy attachments, preserving filenames for ZIP, JPG and LOG files
 
 📦 Building Executable Package
 

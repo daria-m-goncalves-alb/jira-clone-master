@@ -2,7 +2,29 @@
 // Jira Business Logic & Metadata Service
 // ==========================================
 
-const { jiraGet } = require("../jiraClient");
+const { jiraGet, jiraPost } = require("../jiraClient");
+
+async function getWebLinks(issueKey) {
+    try {
+        const links = await jiraGet(`/rest/api/3/issue/${issueKey}/remotelink`);
+        return links.filter(link => !link.application?.type);
+    } catch (err) {
+        console.warn(`Could not read web links from ${issueKey}:`, err.response?.data || err.message);
+        return [];
+    }
+}
+
+async function cloneWebLinks(issueKey, links) {
+    for (const { globalId, application, relationship, object } of links) {
+        try {
+            await jiraPost(`/rest/api/3/issue/${issueKey}/remotelink`, {
+                globalId, application, relationship, object
+            });
+        } catch (err) {
+            console.warn(`Could not copy web link "${object?.title}" to ${issueKey}:`, err.response?.data || err.message);
+        }
+    }
+}
 
 // Get available link types
 async function getAvailableLinkTypes() {
@@ -72,6 +94,8 @@ async function getDefaultNonSubtaskIssueTypeId(projectKey) {
 }
 
 module.exports = {
+    getWebLinks,
+    cloneWebLinks,
     getAvailableLinkTypes,
     getProjectComponents,
     getAvailableFields,

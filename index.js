@@ -6,7 +6,9 @@ const {
     getAvailableLinkTypes,
     getProjectComponents,
     getAvailableFields,
-    getDefaultNonSubtaskIssueTypeId
+    getDefaultNonSubtaskIssueTypeId,
+    getWebLinks,
+    cloneWebLinks
 } = require("./src/services/jiraService");
 const {
     sanitizeADF,
@@ -19,7 +21,7 @@ const {
 const {
     downloadImageAttachments,
     uploadImages,
-    cloneNonImageAttachments
+    cloneRemainingAttachments
 } = require("./src/utils/attachmentHandler");
 const { transformSummaryForTarget, sleep } = require("./src/utils/helpers");
 
@@ -34,6 +36,7 @@ async function run() {
 
     // Fetch the source issue
     const src = await jiraGet(`/rest/api/3/issue/${SOURCE_ISSUE_KEY}`);
+    const webLinks = await getWebLinks(SOURCE_ISSUE_KEY);
 
     // Create clones in each target project
     for (const target of TARGETS) {
@@ -131,6 +134,7 @@ async function run() {
             // Create issue WITHOUT description initially to avoid stale attachment references
             const newIssue = await jiraPost("/rest/api/3/issue", { fields });
             console.log(`✅ Created clone ${newIssue.key} in project ${target.project}`);
+            await cloneWebLinks(newIssue.key, webLinks);
             
             // --- INLINE IMAGE SAFE DESCRIPTION CLONE ---
             const sourceDescription = sanitizeADF(src.fields.description);
@@ -169,8 +173,7 @@ async function run() {
                 );
             }
 
-            // Clone any non-image file attachments
-            await cloneNonImageAttachments(src, newIssue.key, embeddedAttachmentIds);
+            await cloneRemainingAttachments(src, newIssue.key, embeddedAttachmentIds);
             
             try {
                 // Use link type from target config or default to "Cloners"

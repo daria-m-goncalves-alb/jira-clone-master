@@ -82,21 +82,12 @@ async function uploadImages(newIssueKey, images) {
     return idMap;
 }
 
-// Clone non-image attachments (images in description are handled via media nodes)
-async function cloneNonImageAttachments(srcIssue, newIssueKey, embeddedAttachmentIds = new Set()) {
+// Upload attachments that were not already uploaded while cloning the description.
+async function cloneRemainingAttachments(srcIssue, newIssueKey, embeddedAttachmentIds) {
     const attachments = srcIssue.fields.attachment || [];
-    const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp']);
 
     for (const att of attachments) {
-        // Skip image files - they're handled via media nodes in the description
-        const fileExt = att.filename.substring(att.filename.lastIndexOf('.')).toLowerCase();
-        if (imageExtensions.has(fileExt)) {
-            // Only skip if the image was successfully embedded in the description
-            if (embeddedAttachmentIds.has(att.id)) {
-                console.log(`🖼️ Image already embedded: ${att.filename}`);
-                continue;
-            }
-        }
+        if (embeddedAttachmentIds.has(att.id)) continue;
 
         // Download the attachment from Jira
         const response = await axios.get(att.content, {
@@ -109,7 +100,7 @@ async function cloneNonImageAttachments(srcIssue, newIssueKey, embeddedAttachmen
         let uploadName = att.filename;
 
         // Zip unsupported file types
-        const unsupported = [".msg",".eml",".exe",".dll",".bat",".cmd",".sh",".ini",".sys",".db",".log"];
+        const unsupported = [".msg",".eml",".exe",".dll",".bat",".cmd",".sh",".ini",".sys",".db"];
         if (unsupported.some(ext => att.filename.toLowerCase().endsWith(ext))) {
             console.log(`⚠️ Zipping unsupported file: ${att.filename}`);
             const zip = new AdmZip();
@@ -146,5 +137,5 @@ module.exports = {
     getMediaUUID,
     downloadImageAttachments,
     uploadImages,
-    cloneNonImageAttachments
+    cloneRemainingAttachments
 };
