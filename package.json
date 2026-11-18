@@ -1,4 +1,9 @@
 {
+  
+  "name": "clone-master",
+  "version": "1.0.0",
+  "description": "JIRA Issue Clone Tool",
+  "main": "index.js",
   "dependencies": {
     "adm-zip": "^0.5.16",
     "axios": "^0.27.2",
@@ -8,10 +13,6 @@
   "devDependencies": {
     "pkg": "^5.8.1"
   },
-  "name": "clone-master",
-  "version": "1.0.0",
-  "description": "JIRA Issue Clone Tool",
-  "main": "index.js",
   "bin": {
     "jira-clone": "./index.js"
   },
