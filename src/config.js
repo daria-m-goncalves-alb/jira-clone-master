@@ -1,10 +1,10 @@
-const { readFileSync } = require('fs');
+const { existsSync, readFileSync } = require('fs');
 const { join, dirname } = require('path');
 const dotenv = require('dotenv');
 
-dotenv.config();
-
 const scriptDir = process.pkg ? dirname(process.execPath) : join(__dirname, '..');
+const adjacentEnv = join(scriptDir, '.env');
+dotenv.config({ path: existsSync(adjacentEnv) ? adjacentEnv : join(process.cwd(), '.env'), quiet: true });
 
 function loadTargets() {
     try {
@@ -19,10 +19,15 @@ function loadTargets() {
 }
 
 const SOURCE_ISSUE_KEY = process.argv[2];
+const flags = new Set(process.argv.slice(3));
 
-if (!SOURCE_ISSUE_KEY && process.argv[3] !== '--show-links') {
-    console.error("❌ Error: Please provide the source issue key as an argument");
-    console.error("Usage: node index.js <SOURCE_ISSUE_KEY>");
+const showLinks = SOURCE_ISSUE_KEY === '--show-links' || flags.has('--show-links');
+const supportedFlags = ['--copy-status', '--copy-comments', 'sameStatusTrue', '--show-links'];
+const unknownFlags = [...flags].filter(flag => !supportedFlags.includes(flag));
+if (!SOURCE_ISSUE_KEY || (SOURCE_ISSUE_KEY.startsWith('-') && SOURCE_ISSUE_KEY !== '--show-links') || unknownFlags.length) {
+    if (unknownFlags.length) console.error(`Unknown option: ${unknownFlags.join(', ')}`);
+    console.error("Usage: ./clone-master-win.exe <ISSUE_KEY> [--copy-status] [--copy-comments]");
+    console.error("       ./clone-master-win.exe --show-links");
     process.exit(1);
 }
 
@@ -36,5 +41,8 @@ module.exports = {
     API_USER: process.env.JIRA_USER,
     API_TOKEN: process.env.JIRA_TOKEN,
     SOURCE_ISSUE_KEY,
-    TARGETS: loadTargets()
+    SAME_STATUS: flags.has('--copy-status') || flags.has('sameStatusTrue'),
+    COPY_COMMENTS: flags.has('--copy-comments'),
+    SHOW_LINKS: showLinks,
+    TARGETS: showLinks ? [] : loadTargets()
 };

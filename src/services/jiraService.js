@@ -3,6 +3,126 @@
 // ==========================================
 
 const { jiraGet, jiraPost } = require("../jiraClient");
+const { extractMediaIds, rewriteMediaIds } = require("../utils/adfTransformer");
+
+async function getComments(issueKey) {
+    const comments = new Map();
+    let startAt = 0;
+    try {
+        while (true) {
+            const page = await jiraGet(`/rest/api/3/issue/${issueKey}/comment?orderBy=created&expand=properties&maxResults=100&startAt=${startAt}`);
+            for (const comment of page.comments) {
+                const internal = comment.properties?.find(p => p.key === "sd.public.comment")?.value?.internal;
+                if (comment.jsdPublic === false || internal === true || internal === "true") {
+                    console.warn(`Skipped internal service desk comment ${comment.id} on ${issueKey}.`);
+                    continue;
+                }
+                comments.set(comment.id, comment);
+            }
+            startAt += page.comments.length;
+            if (!page.comments.length || startAt >= page.total) break;
+        }
+    } catch (err) {
+        console.warn(`Could not read all comments from ${issueKey}:`, err.response?.data || err.message);
+    }
+    return [...comments.values()];
+}
+
+async function cloneComments(issueKey, comments, mediaIdMap) {
+    let copied = 0;
+    for (const { id, body, visibility } of comments) {
+        try {
+            if (extractMediaIds(body).some(mediaId => !mediaIdMap.has(mediaId))) {
+                throw new Error("An embedded attachment could not be mapped to the clone.");
+            }
+            await jiraPost(`/rest/api/3/issue/${issueKey}/comment`, {
+                body: rewriteMediaIds(body, mediaIdMap),
+                ...(visibility && { visibility })
+            });
+            copied++;
+        } catch (err) {
+            console.warn(`Could not copy comment ${id} to ${issueKey}:`, err.response?.data || err.message);
+        }
+    }
+    console.log(`Copied ${copied} of ${comments.length} eligible comments to ${issueKey}.`);
+}
+
+function matchesStatus(actual, expected) {
+    return (expected.id && actual?.id === expected.id) ||
+        (expected.name && actual?.name?.toLowerCase() === expected.name.toLowerCase());
+}
+
+function transitionTo(transitions, status) {
+    return transitions.find(t => status.id && t.to?.id === status.id) ??
+        transitions.find(t => matchesStatus(t.to, status));
+}
+
+async function getStatusHistory(sourceKey) {
+    const statuses = [];
+    let startAt = 0;
+    while (true) {
+        const page = await jiraGet(`/rest/api/3/issue/${sourceKey}/changelog?startAt=${startAt}&maxResults=100`);
+        for (const change of page.values) {
+            for (const item of change.items) {
+                if (item.fieldId === "status" || item.field === "status") {
+                    statuses.push({ id: item.to, name: item.toString });
+                }
+            }
+        }
+        startAt += page.values.length;
+        if (page.isLast || !page.values.length || startAt >= page.total) return statuses;
+    }
+}
+
+async function copyStatus(issueKey, sourceStatus, sourceKey) {
+    if (!sourceStatus?.name) {
+        console.warn(`Could not match status for ${issueKey}: source status is missing.`);
+        return;
+    }
+
+    const path = `/rest/api/3/issue/${issueKey}`;
+    let current;
+    try {
+        const readStatus = async () => (await jiraGet(`${path}?fields=status`)).fields.status;
+        current = await readStatus();
+
+        let history;
+        const visited = new Set();
+        while (!matchesStatus(current, sourceStatus)) {
+            if (visited.has(current.id ?? current.name)) {
+                console.warn(`Stopped matching ${issueKey} to "${sourceStatus.name}" because Jira returned to "${current.name}".`);
+                return;
+            }
+            visited.add(current.id ?? current.name);
+            const { transitions } = await jiraGet(`${path}/transitions`);
+            let match = transitionTo(transitions, sourceStatus);
+            if (!match && transitions.length) {
+                history ??= await getStatusHistory(sourceKey);
+                // Jump to the latest reachable point on the source issue's route.
+                const forward = transitions.filter(t => !visited.has(t.to?.id ?? t.to?.name));
+                for (let i = history.length - 1; i >= 0; i--) {
+                    const status = history[i];
+                    if (matchesStatus(current, status)) break;
+                    match = transitionTo(forward, status);
+                    if (match) {
+                        history = history.slice(i + 1);
+                        break;
+                    }
+                }
+            }
+            if (!match) {
+                const options = transitions.map(t => t.to?.name).filter(Boolean).join(", ") || "none";
+                console.warn(`${issueKey} is in "${current.name}". No available route from the source history to "${sourceStatus.name}". Available destinations: ${options}.`);
+                return;
+            }
+            await jiraPost(`${path}/transitions`, { transition: { id: match.id } });
+            current = await readStatus();
+        }
+        console.log(`${issueKey} final status: "${current.name}".`);
+    } catch (err) {
+        console.warn(`Could not match ${issueKey} to "${sourceStatus.name}" (last known status: ${current?.name ?? "unknown"}):`, err.response?.data || err.message);
+    }
+}
 
 async function getWebLinks(issueKey) {
     try {
@@ -93,11 +213,29 @@ async function getDefaultNonSubtaskIssueTypeId(projectKey) {
     }
 }
 
+async function getSubtaskIssueTypes(projectKey) {
+    const subtaskTypes = [];
+    let startAt = 0;
+
+    while (true) {
+        const page = await jiraGet(
+            `/rest/api/3/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes?startAt=${startAt}`
+        );
+        subtaskTypes.push(...page.issueTypes.filter(type => type.subtask));
+        startAt += page.issueTypes.length;
+        if (startAt >= page.total || page.issueTypes.length === 0) return subtaskTypes;
+    }
+}
+
 module.exports = {
+    getComments,
+    cloneComments,
+    copyStatus,
     getWebLinks,
     cloneWebLinks,
     getAvailableLinkTypes,
     getProjectComponents,
     getAvailableFields,
-    getDefaultNonSubtaskIssueTypeId
+    getDefaultNonSubtaskIssueTypeId,
+    getSubtaskIssueTypes
 };

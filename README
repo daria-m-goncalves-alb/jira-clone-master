@@ -1,84 +1,72 @@
-Jira Issue Cloner
+# Jira Issue Cloner
 
 This script automates cloning a Jira issue into one or more target projects, preserving fields like summary, description, issue type, assignee, and versions. It is designed for organizations using Atlassian Jira Cloud.
 
-🔑 Requirements
-Node.js 18+
-A Jira API token from your Atlassian account
-Permissions to create issues in the target projects
+## 🔑 Requirements
 
-📋 Setup
-Generate your API token
-Go to Atlassian API Tokens (https://id.atlassian.com/manage-profile/security/api-tokens) and create a new token.
-Copy and save it securely.
+- Node.js 18+ and npm on the build machine
+- A Jira API token from your Atlassian account
+- Permissions to read the source issue and create issues in the target projects
 
-Create a .env file in your project root:
+## 📋 Setup
 
+**Generate your API token**
+
+Go to [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens), create a new token, and save it securely.
+
+**Create a `.env` file** with your Jira site URL, Atlassian login email, and API token.
+
+```dotenv
 JIRA_BASE=https://yourdomain.atlassian.net
 JIRA_USER=your-email@company.com
 JIRA_TOKEN=your_api_token
+```
 
-JIRA_BASE → Your Jira site URL
-JIRA_USER → Your Atlassian login email
-JIRA_TOKEN → Token from step 1
+**Define target projects and versions** in `targets.json`. Each entry creates a separate clone. For example, these entries create two clones in project X, one for each fix version.
 
-Define target projects and versions:
-
-File targets.js lists where issues should be cloned.:
-
+```json
 [
   { "project": "X", "fixVersions": ["0.0.1"] },
   { "project": "X", "fixVersions": ["0.0.2"] }
 ]
+```
 
-Adjusts accordingly. You can add as many target projects as needed.
+Replace X and the version names with values from your Jira site. You can add as many target projects as needed.
 
-▶️ Run the Script
+## 📦 Building the Executable Package
 
-Install dependencies:
+From the project root, install dependencies and build for all platforms.
+
+```sh
 npm install
-
-Change source issue:
-<SOURCE_ISSUE_KEY> on index.js.
-
-Run the clone script:
-npm run start PROJ-123
-
-The script will:
-Fetch the source issue you configured (SOURCE_ISSUE_KEY inside index.js)
-Create new issues in each project defined in targets.json
-Assign the requested fixVersions (and affectsVersions if configured in Jira)
-Copy Jira Web links to each clone
-Copy attachments, preserving filenames for ZIP, JPG and LOG files
-
-📦 Building Executable Package
-
-This project can be packaged into standalone executables that don't require Node.js installation:
-
-Build for all platforms:
 npm run build
+```
 
-Build for specific platforms:
-npm run build:win     # Windows .exe
-npm run build:mac     # macOS binary  
-npm run build:linux   # Linux binary
+The executables are created in the `dist/` directory. To build for a single platform, use `npm run build:win`, `npm run build:mac`, or `npm run build:linux`.
 
-The executables will be created in the `dist/` directory.
+**Distribution benefits**
 
-✅ Distribution Benefits:
-- No Node.js installation required on target machines
-- No source code visible to end users
-- Single executable file (~48MB) contains everything needed
-- Cross-platform compatible
+Each platform has a standalone executable. The target machine can run it without installing Node.js or npm.
 
-📋 Using the Executable:
-1. Copy the executable file (e.g., `clone-master.exe`) to target machine
-2. Create a `.env` file in the same directory with your JIRA credentials
-3. Create a `targets.json` file in the same directory with your target project configurations
-4. Run the executable: `./clone-master.exe PROJ-123`
+## ▶️ Using the Executable
 
-⚠️ Important: Both `.env` and `targets.json` files must be located in the same directory as the executable for the application to work properly.
+1. Open the `dist/` directory, or copy the executable for your platform to the target machine.
+2. Place your `.env` and `targets.json` files beside the executable.
+3. Open a terminal in that directory and pass the source issue key on the command line.
 
-⚠️ Notes
-If errors about affectsVersions appear, ask your Jira admin to add the Affects Versions field to the Create Issue screen in the target project(s).
-The script never deletes or moves the original issue; it only creates new independent clones.
+```sh
+./clone-master-win.exe NBWEBTI-1661 --copy-status --copy-comments
+```
+
+The script fetches the source issue and creates a new clone for each entry in `targets.json`. It copies subtasks, web links, and attachments, preserves filenames for ZIP, JPG, and LOG files, and applies the configured versions.
+
+Both flags are optional and apply to the parent and each subtask.
+
+- `--copy-status` matches the source status and logs the final result once per issue. If Jira requires intermediate transitions, the tool uses the source issue’s status history. The earlier `sameStatusTrue` flag still works.
+- `--copy-comments` copies visible comments oldest first under the account running the clone. Group and role restrictions are preserved. Internal service desk notes are skipped with a warning.
+
+## ⚠️ Notes
+
+- Each run creates new issues and leaves the original issue in place.
+- If Jira reports an error about `affectsVersions`, ask your Jira admin to add the Affects Versions field to the Create Issue screen in the target project.
+- To list available issue link types, run `./clone-master-win.exe --show-links`.
